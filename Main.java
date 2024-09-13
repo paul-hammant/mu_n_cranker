@@ -4,11 +4,8 @@ import com.hsbc.cranker.connector.RouterRegistration;
 import com.hsbc.cranker.mucranker.CrankerRouter;
 import com.hsbc.cranker.mucranker.CrankerRouterBuilder;
 import com.hsbc.cranker.connector.CrankerConnectorBuilder;
-import io.muserver.Method;
-import io.muserver.MuServer;
-import io.muserver.MuServerBuilder;
+import io.muserver.*;
 
-import javax.net.ssl.*;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -16,9 +13,6 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
-import java.security.cert.X509Certificate;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -29,7 +23,7 @@ public class Main {
 
     public static void main(String[] args) throws MalformedURLException {
 
-        System.out.println("HEADER_VAL_LEN: " + HEADERCHARS.length() + ", HEADERCHARS: " + HEADERCHARS);
+        System.out.println("HEADER_VAL_LEN: " + HEADERCHARS.length());
 
         URI crankerPublicWebServerUri = null;
         URI crankerDmzRegistrationURI = null;
@@ -37,10 +31,8 @@ public class Main {
 
         // Cranker setup
         {
-
             // Use the mucranker library to create a router object - this creates handlers
             CrankerRouter crankerRouter = CrankerRouterBuilder.crankerRouter().start();
-            // this crankerRouter isn't itself listening on a socket. There are two usages below.
 
             // Start the server that browsers or clients-api calls will send HTTP requests to
             // This would be accessible outside your DMZ
@@ -69,7 +61,6 @@ public class Main {
 
         // Business app or service and cranker-connector (normally on a separate JVM/box)
         {
-
             final String helloWorldAppPathPrefix = "abc";
 
             // This is the business app. For this demo it is using MuServer again,
@@ -101,8 +92,6 @@ public class Main {
                     .withTarget(helloWorldExampleApp.uri())
                     .start();
 
-            // TODO
-
             System.out.println("Cranker routed traffic hookup " + webSocketRoutedTrafficHookup);
             String crankedHelloWorldUrl = crankerPublicWebServerUri + "/" + helloWorldAppPathPrefix;
             System.out.println("Cranked HelloWorld is available in public at " + crankedHelloWorldUrl + " (try it)");
@@ -118,15 +107,16 @@ public class Main {
         }
     }
 
-
     private static void threadPoolHammeringOfEndpoint(String appToTestUrl, int totalRequests, String crankedOrNot) throws MalformedURLException {
 
         System.out.println("Thread-pool hammering of the "+ crankedOrNot + "URL: " + appToTestUrl + " ...");
 
-        AtomicInteger successfulRequests = new AtomicInteger(0);
-        AtomicInteger unsuccessfulRequests = new AtomicInteger(0);
 
-        ExecutorService executor = Executors.newFixedThreadPool(100);
+        AtomicInteger successfulRequests = new AtomicInteger(0);
+        AtomicInteger unsuccessfulRequestsNot404 = new AtomicInteger(0);
+        AtomicInteger fourOhFourRequests = new AtomicInteger(0);
+
+        ExecutorService executor = Executors.newFixedThreadPool(10);
 
         long startTime = System.currentTimeMillis();
 
@@ -160,13 +150,17 @@ public class Main {
                         if ("Hello, world".equals(content.toString())) {
                             successfulRequests.incrementAndGet();
                         } else {
-                            unsuccessfulRequests.incrementAndGet();
+                            unsuccessfulRequestsNot404.incrementAndGet();
                         }
                     } else {
-                        unsuccessfulRequests.incrementAndGet();
+                        if (responseCode == HttpURLConnection.HTTP_NOT_FOUND) {
+                            fourOhFourRequests.incrementAndGet();
+                        } else {
+                            unsuccessfulRequestsNot404.incrementAndGet();
+                        }
                     }
                 } catch (IOException e) {
-                    unsuccessfulRequests.incrementAndGet();
+                    unsuccessfulRequestsNot404.incrementAndGet();
                 }
             });
         }
@@ -181,10 +175,16 @@ public class Main {
 
         double requestsPerSecond = (successfulRequests.get() * 1000.0) / duration;
 
-        if (unsuccessfulRequests.get() > 0) {
-            System.out.println("Total Successful Requests: " + successfulRequests.get());
-            System.out.println("Total Unsuccessful Requests: " + unsuccessfulRequests.get());
-            System.out.println("Total Time: " + duration + " ms");
+        System.out.println("Total Successful Requests: " + successfulRequests.get());
+
+        if (fourOhFourRequests.get() > 0 || unsuccessfulRequestsNot404.get() > 0) {
+            System.out.println("Total Unsuccessful Requests (not 404): " + unsuccessfulRequestsNot404.get());
+            System.out.println("Total Unsuccessful Requests: (404): " + fourOhFourRequests.get());
+        }
+        if (duration < 60000) {
+            System.out.println("Total Time: " + (duration / 1000) + " secs");
+        } else {
+            System.out.printf("Total Time: %.2f mins\n", ((float) (duration / 1000) / 60));
         }
         System.out.println("... Requests per second: " + Math.round(requestsPerSecond));
     }
