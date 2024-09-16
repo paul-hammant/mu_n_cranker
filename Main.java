@@ -5,6 +5,7 @@ import com.hsbc.cranker.mucranker.CrankerRouter;
 import com.hsbc.cranker.mucranker.CrankerRouterBuilder;
 import com.hsbc.cranker.connector.CrankerConnectorBuilder;
 import io.muserver.*;
+import org.w3c.dom.html.HTMLImageElement;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -15,6 +16,7 @@ import java.net.URI;
 import java.net.URL;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class Main {
@@ -41,6 +43,8 @@ public class Main {
                     .addHandler(crankerRouter.createHttpHandler())
                     .start();
 
+            System.out.println("Cranker Web Server - Request Idle timeout: " + crankerWebServer.requestIdleTimeoutMillis());
+
             // Start a coupled server which will listen to connector registrations on a websocket
             // This would not be accessible to traffic outside the DMZ
             MuServer crankerRegistrationServer = MuServerBuilder.muServer()
@@ -48,6 +52,8 @@ public class Main {
                     //.withInterface(z.b.c.d) // maybe you can set non-public traffic this way, maybe not
                     .addHandler(crankerRouter.createRegistrationHandler())
                     .start();
+
+            System.out.println("Cranker Registration Server - Request Idle timeout: " + crankerRegistrationServer.requestIdleTimeoutMillis());
 
             crankerDmzRegistrationURI = crankerRegistrationServer.uri();
 
@@ -77,6 +83,8 @@ public class Main {
             System.out.println("HelloWorld server (internal network) at " + helloWorldExampleApp.uri() + "/" + helloWorldAppPathPrefix + " (try it)");
 
              // Each deployment of the business app or service would need to register itself with the cranker:
+
+            System.out.println("Hello World Example App - Request Idle timeout: " + helloWorldExampleApp.requestIdleTimeoutMillis());
 
             CrankerConnector connector = CrankerConnectorBuilder.connector()
                     .withRouterRegistrationListener(new RouterEventListener() {
