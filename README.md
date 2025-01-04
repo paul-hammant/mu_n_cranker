@@ -1,6 +1,6 @@
 # Project Setup
 
-This project demonstrates the setup of various components using a sequence diagram.
+Cranker and a Mu hello-world endpoint in a single project, with some in-built load testing
 
 ## Setup Sequence Diagram
 
