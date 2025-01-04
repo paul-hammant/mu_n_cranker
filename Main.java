@@ -4,16 +4,17 @@ import com.hsbc.cranker.connector.RouterRegistration;
 import com.hsbc.cranker.mucranker.CrankerRouter;
 import com.hsbc.cranker.mucranker.CrankerRouterBuilder;
 import com.hsbc.cranker.connector.CrankerConnectorBuilder;
-import io.muserver.*;
-import org.w3c.dom.html.HTMLImageElement;
+import com.sun.net.httpserver.HttpServer;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpExchange;
+import io.muserver.MuServer;
+import io.muserver.MuServerBuilder;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
-import java.net.URI;
-import java.net.URL;
+import java.io.OutputStream;
+import java.net.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -23,7 +24,7 @@ public class Main {
 
     public static String HEADERCHARS = "abcdefghij".repeat(791);
 
-    public static void main(String[] args) throws MalformedURLException {
+    public static void main(String[] args) throws IOException {
 
         System.out.println("HEADER_VAL_LEN: " + HEADERCHARS.length());
 
@@ -69,22 +70,23 @@ public class Main {
         {
             final String helloWorldAppPathPrefix = "abc";
 
-            // This is the business app. For this demo it is using MuServer again,
-            // but it could easily be SpringBoot or Http4K, Quarkus, Micronaut, Vert.x, Heildon, or Jooby.
-            // For this demo, it is in the same JVM, but it could be as easily be
-            //      * in a separate JVM/process,
-            //      * or in another machine / VM / host
-            //      * or many provisioned (explicit horizontal scaling, auto-scaled cluster, combination of those)
-            MuServer helloWorldExampleApp = MuServerBuilder.httpServer()
-                    .addHandler(Method.GET, helloWorldAppPathPrefix, (request, response, pathParams) -> {
-                        response.write("Hello, world");
-                    })
-                    .start();
-            System.out.println("HelloWorld server (internal network) at " + helloWorldExampleApp.uri() + "/" + helloWorldAppPathPrefix + " (try it)");
+            // This is the business app using a vanilla HttpServer.
+            HttpServer helloWorldExampleApp = HttpServer.create(new InetSocketAddress(0), 0);
+            helloWorldExampleApp.createContext("/" + helloWorldAppPathPrefix, new HttpHandler() {
+                @Override
+                public void handle(HttpExchange exchange) throws IOException {
+                    String response = "Hello, world";
+                    exchange.sendResponseHeaders(200, response.length());
+                    try (OutputStream os = exchange.getResponseBody()) {
+                        os.write(response.getBytes());
+                    }
+                }
+            });
+            helloWorldExampleApp.setExecutor(null); // creates a default executor
+            helloWorldExampleApp.start();
+            System.out.println("HelloWorld server (internal network) at http://localhost:" + helloWorldExampleApp.getAddress().getPort() + "/" + helloWorldAppPathPrefix + " (try it)");
 
-             // Each deployment of the business app or service would need to register itself with the cranker:
-
-            System.out.println("Hello World Example App - Request Idle timeout: " + helloWorldExampleApp.requestIdleTimeoutMillis());
+            // Each deployment of the business app or service would need to register itself with the cranker:
 
             CrankerConnector connector = CrankerConnectorBuilder.connector()
                     .withRouterRegistrationListener(new RouterEventListener() {
@@ -97,7 +99,7 @@ public class Main {
                     })
                     .withRouterLookupByDNS(URI.create(webSocketRoutedTrafficHookup))
                     .withRoute(helloWorldAppPathPrefix)  // don't have "/" as first char of prefix
-                    .withTarget(helloWorldExampleApp.uri())
+                    .withTarget(URI.create("http://localhost:" + helloWorldExampleApp.getAddress().getPort()))
                     .start();
 
             System.out.println("Cranker routed traffic hookup " + webSocketRoutedTrafficHookup);
@@ -108,7 +110,7 @@ public class Main {
 
             threadPoolHammeringOfEndpoint(crankedHelloWorldUrl, 40000, "(cranked & SSL) ");
 
-            threadPoolHammeringOfEndpoint(helloWorldExampleApp.uri() + "/" + helloWorldAppPathPrefix, 400000, "(uncranked & non SSL) ");
+            threadPoolHammeringOfEndpoint("http://localhost:" + helloWorldExampleApp.getAddress().getPort() + "/" + helloWorldAppPathPrefix, 400000, "(uncranked & non SSL) ");
 
             System.out.println("Tests Finished");
 
